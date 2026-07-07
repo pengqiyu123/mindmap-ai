@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { api } from '../lib/api';
+import { MINDFLOW_MARKDOWN_FORMAT_SPEC } from '../../shared/markdownImport';
 
 type Status = 'connected' | 'waiting' | 'disconnected';
 
@@ -42,8 +43,12 @@ export default function IdeCollabPanel() {
         since = active.updatedAt;
         setLastUpdate(active.updatedAt);
       } else {
-        // 后端尚无活动会话：清空本地视图，进入等待 IDE 推送状态
-        useStore.setState({ currentId: null, title: '新的思维导图', messages: [], markmap: '' });
+        // 后端尚无活动会话：保留当前视图内容（可能是对话模式的会话），不清空。
+        // 仅当当前确实没有会话时才显示空态。
+        const cur = useStore.getState();
+        if (!cur.currentId) {
+          useStore.setState({ title: '新的思维导图' });
+        }
       }
     } catch { /* ignore */ }
     if (!alive()) return;
@@ -97,11 +102,27 @@ export default function IdeCollabPanel() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const exampleCmd = `npm run ide:send -- "帮我把这段需求整理成思维导图：……"`;
-  const curlCmd = `curl -s -X POST http://127.0.0.1:3001/api/ide/push -H "Content-Type: application/json" -d '{"message":"你的想法"}'`;
+  // 可复制到 IDE 的提示词（让 IDE AI 知道如何与 MindFlow 协同）
+  const promptFirst = `请先阅读项目的 AGENTS.md 文件，了解如何与 MindFlow 思维导图工具协同工作。
+然后检查服务是否在运行：npm run ide:health`;
+  const promptMake = `帮我把以下内容整理成 Markdown 大纲格式的思维导图，然后用 npm run ide:send 推送到 MindFlow。
+
+${MINDFLOW_MARKDOWN_FORMAT_SPEC}
+
+直接输出 Markdown 大纲，不要加解释。
+
+内容：
+[在这里粘贴你的内容]`;
+  const promptAppend = `读取 MindFlow 当前的思维导图（GET /api/ide/active），在我的内容基础上合并补充，不要丢失已有分支。
+
+${MINDFLOW_MARKDOWN_FORMAT_SPEC}
+
+整理成完整的 Markdown 大纲后，用 push-markmap 接口提交（不要用 ide:send）：
+
+[在这里粘贴你要补充的内容]`;
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 text-slate-100">
+    <div className="flex flex-col h-full w-full bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 text-slate-100">
       {/* Header */}
       <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -144,44 +165,37 @@ export default function IdeCollabPanel() {
             onClick={() => setSetupOpen((v) => !v)}
             className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400 font-semibold hover:bg-white/5"
           >
-            <span>接入方式</span>
+            <span>复制提示词到 IDE</span>
             <ChevronDown size={14} className={`transition-transform ${setupOpen ? 'rotate-180' : ''}`} />
           </button>
           {setupOpen && (
             <div className="px-3 pb-3 space-y-3">
-              {/* 指令提示 */}
-              <div className="rounded-lg bg-black/30 p-2.5 text-xs text-slate-300 leading-relaxed border border-white/10">
-                <div className="text-slate-400 mb-1">在 IDE 聊天框里直接说：</div>
-                <div className="font-mono text-[11px] text-amber-300">
-                  “帮我整理一份思维导图，用 npm run ide:send 推到 MindFlow”
-                </div>
-                <div className="text-slate-500 mt-1.5 text-[11px]">
-                  IDE 的 AI 读取 <span className="font-mono text-slate-300">AGENTS.md</span> 后会自动调接口，右侧导图实时刷新。
-                </div>
+              <div className="text-[11px] text-slate-500 leading-relaxed">
+                复制以下提示词到 IDE 的 AI 对话框，让 AI 知道如何与 MindFlow 协同。
               </div>
 
-              {/* 专家路径提示 */}
-              <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/25 p-2.5 text-[11px] text-emerald-200/90 leading-relaxed">
-                💡 如果你是 <strong className="text-emerald-300">有模型能力的 IDE AI</strong>（Trae / Cursor / Claude Code），
-                优先自己整理成完整 markmap 用 <span className="font-mono">push-markmap</span> 直提，效果更好。续接时先读当前导图再合并成完整新版。
-              </div>
-
-              {/* npm 脚本 */}
               <CodeBlock
-                label="npm 脚本"
-                code={exampleCmd}
-                colorClass="text-emerald-300"
-                copied={copied === 'npm'}
-                onCopy={() => copyExample(exampleCmd, 'npm')}
+                label="① 首次使用 · 让 AI 了解项目"
+                code={promptFirst}
+                colorClass="text-amber-200"
+                copied={copied === 'first'}
+                onCopy={() => copyExample(promptFirst, 'first')}
               />
 
-              {/* curl */}
               <CodeBlock
-                label="通用 · curl"
-                code={curlCmd}
+                label="② 整理思维导图"
+                code={promptMake}
+                colorClass="text-emerald-300"
+                copied={copied === 'make'}
+                onCopy={() => copyExample(promptMake, 'make')}
+              />
+
+              <CodeBlock
+                label="③ 续接 · 在已有导图上补充"
+                code={promptAppend}
                 colorClass="text-cyan-300"
-                copied={copied === 'curl'}
-                onCopy={() => copyExample(curlCmd, 'curl')}
+                copied={copied === 'append'}
+                onCopy={() => copyExample(promptAppend, 'append')}
               />
             </div>
           )}

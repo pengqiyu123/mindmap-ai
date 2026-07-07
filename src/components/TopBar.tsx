@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Menu, Sparkles, Download, Upload, RotateCcw, Trash2, Pencil, Check, X, Terminal, MessageSquare, Settings, History } from 'lucide-react';
+import { Menu, Sparkles, Download, Upload, RotateCcw, Trash2, Pencil, Check, X, Terminal, MessageSquare, Settings, History, Copy } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import SettingsPanel from './SettingsPanel';
 import SnapshotList from './SnapshotList';
+import type { MarkmapHandle } from './MarkmapView';
+import { STANDARD_MARKDOWN_PROMPT } from '../../shared/markdownImport';
 
 interface Props {
-  mmRef: React.RefObject<{ exportSVG: () => string | null } | null>;
+  mmRef: React.RefObject<MarkmapHandle | null>;
   mode: 'chat' | 'ide';
   onModeChange: (mode: 'chat' | 'ide') => void;
 }
@@ -23,6 +25,7 @@ export default function TopBar({ mmRef, mode, onModeChange }: Props) {
   const [draft, setDraft] = useState(title);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [copiedImportPrompt, setCopiedImportPrompt] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,7 +45,7 @@ export default function TopBar({ mmRef, mode, onModeChange }: Props) {
   };
 
   const handleExportPNG = () => {
-    const svgStr = mmRef.current?.exportSVG();
+    const svgStr = mmRef.current?.exportRasterSVG();
     if (!svgStr) return;
     const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
@@ -87,6 +90,17 @@ export default function TopBar({ mmRef, mode, onModeChange }: Props) {
   const handleImportClick = () => {
     if (isStreaming) return;
     fileInputRef.current?.click();
+  };
+
+  const copyImportPrompt = () => {
+    navigator.clipboard.writeText(STANDARD_MARKDOWN_PROMPT)
+      .then(() => {
+        setCopiedImportPrompt(true);
+        setTimeout(() => setCopiedImportPrompt(false), 1800);
+      })
+      .catch(() => {
+        alert('复制失败，请打开项目根目录的「导入格式说明.md」查看标准提示词');
+      });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -197,15 +211,31 @@ export default function TopBar({ mmRef, mode, onModeChange }: Props) {
           <History size={15} />
           <span className="hidden sm:inline">历史</span>
         </button>
-        <button
-          onClick={handleImportClick}
-          disabled={isStreaming}
-          title="导入 txt / md 文件"
-          className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm text-zinc-700 hover:bg-zinc-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Upload size={15} />
-          <span className="hidden sm:inline">导入</span>
-        </button>
+        <div className="group relative">
+          <button
+            onClick={handleImportClick}
+            disabled={isStreaming}
+            title="导入 txt / md 文件。标准 md：# 主题 / ## 分支 / - 要点"
+            className="flex items-center gap-1.5 px-3 h-9 rounded-xl text-sm text-zinc-700 hover:bg-zinc-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Upload size={15} />
+            <span className="hidden sm:inline">导入</span>
+          </button>
+          <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-xl border border-zinc-200 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
+            <div className="px-3 py-2 text-[11px] leading-relaxed text-zinc-500 border-b border-zinc-100">
+              标准 md：<span className="font-mono text-zinc-700">#</span> 主题 /
+              <span className="font-mono text-zinc-700"> ##</span> 分支 /
+              <span className="font-mono text-zinc-700"> -</span> 要点
+            </div>
+            <button onClick={handleImportClick} className="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 text-zinc-700">
+              选择 .txt / .md 文件
+            </button>
+            <button onClick={copyImportPrompt} className="w-full flex items-center gap-2 text-left px-3 py-2 text-sm hover:bg-indigo-50 text-zinc-700">
+              {copiedImportPrompt ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="text-zinc-400" />}
+              {copiedImportPrompt ? '已复制提示词' : '复制 AI 标准提示词'}
+            </button>
+          </div>
+        </div>
         <input
           ref={fileInputRef}
           type="file"

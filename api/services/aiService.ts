@@ -3,6 +3,7 @@ import type { Message } from '../../shared/types.js';
 import { buildMindMap, streamReply } from './heuristicEngine.js';
 import { callLLM, getLLMConfig, streamLLMReply } from './llmClient.js';
 import { detectStructured, cleanStructured } from './outlineCleaner.js';
+import { analyzeMarkdownOutline } from '../../shared/markdownImport.js';
 
 export interface StreamHandle {
   reply: string;
@@ -50,8 +51,12 @@ export async function handleChatStream(
   const cfg = getLLMConfig();
   let reply: string;
   let markmap: string;
+  const markdownImport = cleanedMessage ? analyzeMarkdownOutline(cleanedMessage) : null;
 
-  if (cfg) {
+  if (markdownImport) {
+    reply = `识别到 Markdown 大纲，已按原结构导入（${markdownImport.nodeLikeLineCount} 个结构行，未调用 LLM）。`;
+    markmap = markdownImport.markdown;
+  } else if (cfg) {
     try {
       const llmMessages = allMessages.map((m) => ({
         role: m.role as 'user' | 'assistant',

@@ -42,7 +42,7 @@ export default function ChatPanel() {
   const isEmpty = messages.length === 0 && !isStreaming;
 
   return (
-    <div className="flex flex-col h-full bg-white border-r border-zinc-200/70">
+    <div className="flex flex-col h-full w-full bg-white border-r border-zinc-200/70">
       {/* Message list */}
       <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-4 scroll-smooth">
         {isEmpty && <EmptyState />}

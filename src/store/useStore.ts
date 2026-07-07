@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import type { MarkmapSnapshot, Message, SessionSummary } from '../../shared/types';
+import {
+  analyzeMarkdownOutline,
+  isMarkdownFilename,
+  titleFromFilename,
+} from '../../shared/markdownImport';
 import { api } from '../lib/api';
+import { loadVisualPrefs, saveVisualPrefs, type VisualPrefs } from '../lib/themes';
 
 interface AppState {
   // session list
@@ -18,6 +24,10 @@ interface AppState {
 
   // markmap history
   snapshots: MarkmapSnapshot[];
+
+  // 视觉偏好（主题 / 密度 / 展开层级），持久化到 localStorage
+  visualPrefs: VisualPrefs;
+  setVisualPrefs: (patch: Partial<VisualPrefs>) => void;
 
   // actions
   loadSessions: () => Promise<void>;
@@ -52,6 +62,13 @@ export const useStore = create<AppState>((set, get) => ({
   streamingReply: '',
   error: null,
   snapshots: [],
+  visualPrefs: loadVisualPrefs(),
+
+  setVisualPrefs(patch) {
+    const next = { ...get().visualPrefs, ...patch };
+    set({ visualPrefs: next });
+    saveVisualPrefs(next);
+  },
 
   async loadSessions() {
     const list = await api.listSessions();
@@ -167,17 +184,58 @@ export const useStore = create<AppState>((set, get) => ({
   async importFile(filename, content) {
     // 标题优先用文件名（去扩展名），符合「我导入了什么」的心智；
     // 内容首行作标题的逻辑留给纯对话/推送场景。
-    const titleFromName = filename
-      ? filename.replace(/\.(txt|md)$/i, '').slice(0, 30)
-      : undefined;
-    // 大文件截断，避免撑爆 prompt；不另起处理链路，仍走 sendMessage（自动清洗 + 引擎）。
+    const titleFromName = titleFromFilename(filename);
+
+    // 检测内容是否已是结构化 Markdown 大纲。
+    // 如果是，直接走 push-markmap 直提，不让 LLM/引擎重新"理解"破坏原有结构。
+    const markdownImport = isMarkdownFilename(filename)
+      ? analyzeMarkdownOutline(content, titleFromName)
+      : null;
+
+    if (markdownImport) {
+      // .md 且内容已是 markmap：直提，不走 /chat
+      let createdId: string | null = null;
+      try {
+        const s = await api.createSession(markdownImport.title || titleFromName || '导入的导图');
+        createdId = s.id;
+        await api.pushMarkmap({
+          sessionId: s.id,
+          markdown: markdownImport.markdown,
+          userMessage: `（导入文件：${filename}）`,
+          reply: `已从文件「${filename}」导入，结构保持原样。`,
+        });
+        // 重新读取完整会话状态
+        const full = await api.getSession(s.id);
+        set({
+          currentId: full.id,
+          title: full.title,
+          messages: full.messages,
+          markmap: full.markmap,
+          streamingReply: '',
+          error: null,
+        });
+        localStorage.setItem(LAST_KEY, full.id);
+        await get().loadSessions();
+        await get().loadSnapshots(full.id);
+        return;
+      } catch (err) {
+        if (createdId) {
+          try { await api.deleteSession(createdId); } catch { /* ignore cleanup */ }
+        }
+        set({
+          error: `Markdown 导入失败：${err instanceof Error ? err.message : String(err)}`,
+          isStreaming: false,
+          streamingReply: '',
+        });
+        return;
+      }
+    }
+
+    // 非 markmap 文件（.txt 或纯自然语言 .md）：走 sendMessage，由 AI/引擎整理
     const prompt =
       content.length > 4000
         ? `${content.slice(0, 4000)}\n\n（文件较长，已截断）`
         : content;
-    // 有可用文件名时先建带该标题的空会话，再发消息。
-    // 后端 /chat 的标题 guard（=== '新的思维导图'）会跳过覆盖，保住文件名标题。
-    // 文件名清洗后为空（如文件名 `.md`）则回退原链路（标题由内容首行生成）。
     if (titleFromName) {
       const s = await api.createSession(titleFromName);
       set({

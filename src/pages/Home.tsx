@@ -4,6 +4,7 @@ import SessionDrawer from '../components/SessionDrawer';
 import ChatPanel from '../components/ChatPanel';
 import IdeCollabPanel from '../components/IdeCollabPanel';
 import MarkmapView from '../components/MarkmapView';
+import type { MarkmapHandle } from '../components/MarkmapView';
 import { useStore } from '../store/useStore';
 
 type Mode = 'chat' | 'ide';
@@ -11,7 +12,7 @@ const MODE_KEY = 'mindflow:mode';
 
 export default function Home() {
   const markmap = useStore((s) => s.markmap);
-  const mmRef = useRef<{ exportSVG: () => string | null; fit: () => void } | null>(null);
+  const mmRef = useRef<MarkmapHandle | null>(null);
   const restoreFromLocal = useStore((s) => s.restoreFromLocal);
   const loadSessions = useStore((s) => s.loadSessions);
 

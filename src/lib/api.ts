@@ -88,6 +88,19 @@ export const api = {
     });
     return parseResponse<{ markmap: string; history: MarkmapSnapshot[] }>(res);
   },
+  async pushMarkmap(payload: {
+    sessionId?: string;
+    markdown: string;
+    reply?: string;
+    userMessage?: string;
+  }): Promise<{ sessionId: string; title: string }> {
+    const res = await fetch(`${BASE}/ide/push-markmap`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return parseResponse<{ sessionId: string; title: string }>(res);
+  },
   chat(
     sessionId: string | undefined,
     message: string,

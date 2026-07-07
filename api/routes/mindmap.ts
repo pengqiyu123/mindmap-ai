@@ -11,6 +11,7 @@ import { detectStructured, cleanStructured } from '../services/outlineCleaner.js
 import { pushSnapshot, materializeCurrentIfNeeded } from '../services/snapshot.js';
 import type { ChatRequest } from '../../shared/types.js';
 import { setActiveSessionId, getActiveSessionId } from '../state/activeSession.js';
+import { analyzeMarkdownOutline } from '../../shared/markdownImport.js';
 
 const router = Router();
 
@@ -151,9 +152,14 @@ router.post('/chat', async (req: Request, res: Response) => {
     // guard `=== '新的思维导图'`：只在默认标题时生成，避免覆盖导入文件预设的文件名标题。
     if (session.messages.length === 2 && session.title === '新的思维导图') {
       const rawFirstLine = message.trim().split(/\n/)[0];
-      const kind = detectStructured(rawFirstLine);
-      const cleanedFirstLine = kind ? cleanStructured(rawFirstLine, kind) : rawFirstLine;
-      session.title = cleanedFirstLine.trim().slice(0, 16) || session.title;
+      const markdownImport = analyzeMarkdownOutline(message.trim());
+      if (markdownImport?.title) {
+        session.title = markdownImport.title.slice(0, 50);
+      } else {
+        const kind = detectStructured(rawFirstLine);
+        const cleanedFirstLine = kind ? cleanStructured(rawFirstLine, kind) : rawFirstLine;
+        session.title = cleanedFirstLine.replace(/^#+\s*/, '').trim().slice(0, 16) || session.title;
+      }
     }
     saveSession(session);
   } catch (err) {

@@ -37,7 +37,26 @@ html, body, #root {
 
 /* Markmap node text styling */
 .markmap-foreign {
-  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
+  font-family: var(--mm-node-font-family, 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif) !important;
+}
+/* 节点卡片外观：圆角/底色/描边（box-shadow 描边不占布局尺寸）/字重。
+   变量值由 MarkmapView 注入到 :root，markmap 的测量容器（挂在 body 上）同样继承，
+   保证节点尺寸测量与实际渲染一致，避免文字被裁剪。 */
+.markmap-foreign > div {
+  padding: 1px 7px;
+  border-radius: var(--mm-node-radius, 0px);
+  background: var(--mm-node-bg, transparent);
+  box-shadow: var(--mm-node-shadow, none);
+  font-weight: var(--mm-node-font-weight, 400);
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+/* 中心节点（depth=0）强调：仅用底色 + 描边，不改字号/字重，避免测量偏差裁剪 */
+.markmap-node[data-depth='0'] > .markmap-foreign > div {
+  background: var(--mm-center-bg, var(--mm-node-bg, transparent));
+  box-shadow: var(--mm-center-shadow, var(--mm-node-shadow, none));
+}
+.markmap-link {
+  stroke-opacity: var(--mm-link-opacity, 0.85);
 }
 .markmap-foreign code {
   padding: 1px 5px;
