@@ -84,6 +84,7 @@ function applyThemeVars(theme: MindmapTheme) {
 }
 
 const SVGNS = 'http://www.w3.org/2000/svg';
+const EXPORT_PADDING = 48;
 
 // PNG 光栅化专用：markmap 的节点标签是 <foreignObject>(HTML)，画到 canvas 会污染画布
 // （Chromium 安全策略，toBlob/getImageData 报 tainted），因此把它们转成原生 <text>+<rect>。
@@ -135,19 +136,74 @@ function convertForeignObjectsToText(clone: SVGSVGElement, theme: MindmapTheme) 
   });
 }
 
+function getFullExportBounds(src: SVGSVGElement) {
+  try {
+    const bbox = src.getBBox();
+    if (
+      Number.isFinite(bbox.x) &&
+      Number.isFinite(bbox.y) &&
+      Number.isFinite(bbox.width) &&
+      Number.isFinite(bbox.height) &&
+      bbox.width > 0 &&
+      bbox.height > 0
+    ) {
+      return {
+        x: bbox.x - EXPORT_PADDING,
+        y: bbox.y - EXPORT_PADDING,
+        width: bbox.width + EXPORT_PADDING * 2,
+        height: bbox.height + EXPORT_PADDING * 2,
+      };
+    }
+  } catch {
+    // getBBox may fail before SVG content has been laid out; fall back to viewport size.
+  }
+  const width = src.clientWidth || 1280;
+  const height = src.clientHeight || 720;
+  return { x: 0, y: 0, width, height };
+}
+
+function addExportBackground(clone: SVGSVGElement, theme: MindmapTheme, bounds: ReturnType<typeof getFullExportBounds>) {
+  const gradientId = `mindflow-export-bg-${Math.random().toString(36).slice(2)}`;
+  const defs = document.createElementNS(SVGNS, 'defs');
+  const gradient = document.createElementNS(SVGNS, 'linearGradient');
+  gradient.setAttribute('id', gradientId);
+  gradient.setAttribute('x1', '0');
+  gradient.setAttribute('y1', '0');
+  gradient.setAttribute('x2', '1');
+  gradient.setAttribute('y2', '1');
+
+  const start = document.createElementNS(SVGNS, 'stop');
+  start.setAttribute('offset', '0%');
+  start.setAttribute('stop-color', theme.bgFrom);
+  const end = document.createElementNS(SVGNS, 'stop');
+  end.setAttribute('offset', '100%');
+  end.setAttribute('stop-color', theme.bgTo);
+  gradient.append(start, end);
+  defs.appendChild(gradient);
+
+  const rect = document.createElementNS(SVGNS, 'rect');
+  rect.setAttribute('x', String(bounds.x));
+  rect.setAttribute('y', String(bounds.y));
+  rect.setAttribute('width', String(bounds.width));
+  rect.setAttribute('height', String(bounds.height));
+  rect.setAttribute('fill', `url(#${gradientId})`);
+
+  clone.insertBefore(defs, clone.firstChild);
+  clone.insertBefore(rect, defs.nextSibling);
+}
+
 // 生成导出用的 SVG 字符串。
 // raster=false：矢量 SVG 下载，保留 foreignObject 完整保真 + 内嵌节点盒子样式。
 // raster=true：PNG 光栅化，转 foreignObject 为原生 text/rect 以规避 canvas 污染。
 function buildExportSvg(src: SVGSVGElement, theme: MindmapTheme, raster: boolean): string {
   const clone = src.cloneNode(true) as SVGSVGElement;
   clone.setAttribute('xmlns', SVGNS);
-  // live svg 靠 CSS 撑满容器，本身无 width/height/viewBox；独立渲染会退回 300x150 默认尺寸。
-  // 显式写入当前屏幕尺寸，使导出与所见一致（WYSIWYG），布局正确。
-  const w = src.clientWidth || 1280;
-  const h = src.clientHeight || 720;
-  clone.setAttribute('width', String(w));
-  clone.setAttribute('height', String(h));
-  clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  // 导出应覆盖完整导图，而不是当前浏览器视口；用内容包围盒生成 viewBox。
+  const bounds = getFullExportBounds(src);
+  clone.setAttribute('width', String(Math.ceil(bounds.width)));
+  clone.setAttribute('height', String(Math.ceil(bounds.height)));
+  clone.setAttribute('viewBox', `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`);
+  addExportBackground(clone, theme, bounds);
   if (raster) {
     convertForeignObjectsToText(clone, theme);
   } else {
